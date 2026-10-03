@@ -25,7 +25,12 @@ import {
   Volume2,
   Building,
   User,
-  Check
+  Check,
+  FolderOpen,
+  Image as ImageIcon,
+  X,
+  RotateCcw,
+  Plus
 } from 'lucide-react';
 import { 
   analyzeMaintenancePhoto, 
@@ -33,6 +38,7 @@ import {
   DamageAnalysisResult 
 } from '../../services/geminiClient';
 import { scheduleMaintenanceInCalendar, createGoogleTask } from '../../services/workspace';
+import { MaintenanceTroubleshooter } from './MaintenanceTroubleshooter';
 
 interface MaintenanceHubProps {
   maintenance: MaintenanceRequest[];
@@ -54,6 +60,7 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
   onUpdateStatus,
 }) => {
   const [selectedTicketId, setSelectedTicketId] = useState<string>(maintenance[0]?.id || '');
+  const [showTroubleshooter, setShowTroubleshooter] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
@@ -67,9 +74,11 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
   const [unitNumber, setUnitNumber] = useState(userUnit);
   const [category, setCategory] = useState<MaintenanceCategory>('plumbing');
   const [priority, setPriority] = useState<MaintenancePriority>('high');
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [damagePhotos, setDamagePhotos] = useState<Array<{ id: string; url: string; name: string }>>([]);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [damageAnalysis, setDamageAnalysis] = useState<DamageAnalysisResult | null>(null);
+  const [inspectionError, setInspectionError] = useState<{ reason: string } | null>(null);
+  const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   // Dispatch state
@@ -196,38 +205,87 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
     }
   };
 
-  // Handle Photo damage analysis with gemini-3.1-pro-preview
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Handle Photo damage analysis with gemini-3.1-pro-preview (Supports up to 6 images)
+  const handleDamageFilesSelected = async (fileList?: FileList | File[] | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const filesArray = Array.from(fileList);
+    const availableSlots = 6 - damagePhotos.length;
+    if (availableSlots <= 0) {
+      alert('Maximum of 6 damage photos allowed per maintenance ticket.');
+      return;
+    }
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const b64 = reader.result as string;
-      setPhotoBase64(b64);
-      runDamageInspection(b64);
-    };
-    reader.readAsDataURL(file);
+    const filesToProcess = filesArray.slice(0, availableSlots);
+    setInspectionError(null);
+
+    const newPhotosPromises = filesToProcess.map(file => {
+      return new Promise<{ id: string; url: string; name: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            id: `dmg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            url: reader.result as string,
+            name: file.name
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    const newPhotos = await Promise.all(newPhotosPromises);
+    const updatedPhotos = [...damagePhotos, ...newPhotos].slice(0, 6);
+    setDamagePhotos(updatedPhotos);
+
+    // Run damage inspection on all uploaded photos
+    runDamageInspectionOnPhotos(updatedPhotos);
   };
 
-  const runDamageInspection = async (b64: string) => {
+  const removeDamagePhoto = (id: string) => {
+    const remaining = damagePhotos.filter(p => p.id !== id);
+    setDamagePhotos(remaining);
+    if (remaining.length > 0) {
+      runDamageInspectionOnPhotos(remaining);
+    } else {
+      setDamageAnalysis(null);
+      setInspectionError(null);
+    }
+  };
+
+  const runDamageInspectionOnPhotos = async (photoList: Array<{ id: string; url: string; name: string }>) => {
+    if (photoList.length === 0) return;
     try {
       setIsAnalyzingPhoto(true);
-      const result = await analyzeMaintenancePhoto(b64, description || 'Inspect on-site property damage');
+      setInspectionError(null);
+
+      const payload = photoList.map(p => ({
+        data: p.url,
+        mimeType: 'image/jpeg',
+      }));
+
+      const result = await analyzeMaintenancePhoto(payload, description || 'Inspect on-site property damage');
       setDamageAnalysis(result);
 
-      // Auto-set priority and trade
-      if (result.severityLevel) {
-        setPriority(result.severityLevel as MaintenancePriority);
-      }
-      if (result.recommendedTrade) {
-        setCategory(result.recommendedTrade as MaintenanceCategory);
-      }
-      if (!title) {
-        setTitle(result.triageSummary || 'Damage Inspection Ticket');
+      if (result.parsingStatus === 'failed') {
+        setInspectionError({
+          reason: result.failureReason || 'Photos are too dark or do not show identifiable physical or utility defects.'
+        });
+      } else {
+        // Auto-set priority and trade
+        if (result.severityLevel) {
+          setPriority(result.severityLevel as MaintenancePriority);
+        }
+        if (result.recommendedTrade) {
+          setCategory(result.recommendedTrade as MaintenanceCategory);
+        }
+        if (!title && result.triageSummary) {
+          setTitle(result.triageSummary);
+        }
       }
     } catch (err: any) {
       console.error('Image analysis error', err);
+      setInspectionError({
+        reason: `Gemini 3.1 Pro analysis error: ${err.message || 'Unable to inspect photos.'}`
+      });
     } finally {
       setIsAnalyzingPhoto(false);
     }
@@ -258,7 +316,7 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
     setDescription('');
     setVoiceTranscript('');
     setRecordedAudioUrl(null);
-    setPhotoBase64(null);
+    setDamagePhotos([]);
     setDamageAnalysis(null);
   };
 
@@ -309,6 +367,19 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowTroubleshooter(!showTroubleshooter)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border transition shadow ${
+              showTroubleshooter 
+                ? 'bg-indigo-600 text-white border-indigo-500' 
+                : 'bg-indigo-950/60 text-indigo-300 border-indigo-500/40 hover:bg-indigo-600 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>{showTroubleshooter ? 'Close Troubleshooter' : 'Renter Voice Troubleshooter'}</span>
+          </button>
+
           {!isRecording ? (
             <button
               type="button"
@@ -316,7 +387,7 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
               className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-rose-950/50 transition transform active:scale-95"
             >
               <Mic className="w-4 h-4" />
-              <span>Start Voice Intake</span>
+              <span>Voice Hotline</span>
             </button>
           ) : (
             <button
@@ -325,11 +396,32 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
               className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-xl text-xs font-bold shadow-lg shadow-amber-950/50 transition animate-pulse"
             >
               <MicOff className="w-4 h-4" />
-              <span>Stop Recording ({recordingSeconds}s)</span>
+              <span>Stop ({recordingSeconds}s)</span>
             </button>
           )}
         </div>
       </div>
+
+      {showTroubleshooter && (
+        <MaintenanceTroubleshooter
+          unitNumber={unitNumber}
+          tenantName={userName}
+          onProceedToTicket={(ticketData) => {
+            setTitle(ticketData.title);
+            setDescription(ticketData.description);
+            setCategory(ticketData.category);
+            setPriority(ticketData.priority);
+            setDamagePhotos(ticketData.photos);
+            setShowTroubleshooter(false);
+          }}
+          onProceedToComplaint={() => {
+            setShowTroubleshooter(false);
+          }}
+          onResolvedByTenant={() => {
+            setShowTroubleshooter(false);
+          }}
+        />
+      )}
 
       {dispatchSuccess && (
         <div className="p-3 bg-emerald-600/20 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
@@ -425,42 +517,76 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
                 />
               </div>
 
-              {/* Photo Upload & AI Damage Inspector */}
+              {/* Photo Upload & AI Damage Inspector (Up to 6 photos from camera, library, or files) */}
               <div className="p-3.5 bg-slate-900/60 border border-slate-700/60 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <div className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
                     <Camera className="w-4 h-4 text-indigo-400" />
-                    <span>Upload Damage Photo for Gemini 3.1 Pro Inspection</span>
+                    <span>Attach Damage Photos (Up to 6 Images)</span>
                   </div>
-                  <label className="cursor-pointer px-3 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition">
-                    <Upload className="w-3 h-3" />
-                    <span>Select Photo</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handlePhotoUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    {/* Camera */}
+                    <label className="cursor-pointer px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition">
+                      <Camera className="w-3 h-3 text-emerald-400" />
+                      <span>Camera</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        multiple
+                        onChange={(e) => handleDamageFilesSelected(e.target.files)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {/* Files / Library */}
+                    <label className="cursor-pointer px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition">
+                      <Upload className="w-3 h-3" />
+                      <span>Files / Photos</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleDamageFilesSelected(e.target.files)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {isAnalyzingPhoto && (
-                  <div className="text-center py-4 text-indigo-300 flex items-center justify-center gap-2 text-xs">
+                  <div className="text-center py-3 text-indigo-300 flex items-center justify-center gap-2 text-xs">
                     <Sparkles className="w-4 h-4 animate-spin text-indigo-400" />
-                    <span>Gemini 3.1 Pro is analyzing structural defects & trade hazards...</span>
+                    <span>Gemini 3.1 Pro is analyzing structural defects & trade hazards across {damagePhotos.length} photos...</span>
                   </div>
                 )}
 
-                {photoBase64 && (
-                  <div className="flex gap-3 items-start">
-                    <img 
-                      src={photoBase64} 
-                      alt="Damage preview" 
-                      className="w-24 h-24 object-cover rounded-xl border border-slate-700 shrink-0" 
-                    />
+                {inspectionError && (
+                  <div className="p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-lg text-xs text-rose-300 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{inspectionError.reason}</span>
+                  </div>
+                )}
+
+                {damagePhotos.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {damagePhotos.map((photo) => (
+                        <div key={photo.id} className="relative rounded-lg overflow-hidden border border-slate-700 aspect-square group">
+                          <img src={photo.url} alt="Damage Angle" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeDamagePhoto(photo.id)}
+                            className="absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-600 rounded-full text-white flex items-center justify-center text-xs"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
                     {damageAnalysis && (
-                      <div className="space-y-1 text-[11px] text-slate-300">
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-300">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-white">Severity:</span>
                           <span className={`px-2 py-0.2 rounded font-bold uppercase ${
@@ -468,6 +594,7 @@ export const MaintenanceHub: React.FC<MaintenanceHubProps> = ({
                           }`}>
                             {damageAnalysis.severityLevel}
                           </span>
+                          <span className="text-slate-400">• Recommended Trade: <strong>{damageAnalysis.recommendedTrade}</strong></span>
                         </div>
                         <div>
                           <strong>Identified Defects:</strong> {damageAnalysis.identifiedIssues.join(', ')}

@@ -6,7 +6,7 @@ import { handleApiRequest } from './src/server/apiHandler.ts';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // API routes handled by the API router
 app.use(async (req, res, next) => {
@@ -26,6 +26,6 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`PropFlow Enterprise server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`PropFlow Enterprise server listening on 0.0.0.0:${PORT}`);
 });

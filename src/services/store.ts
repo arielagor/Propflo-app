@@ -7,7 +7,9 @@ import {
   LeaseAgreement, 
   UserRole,
   UserProfile,
-  ProductivityMetric 
+  ProductivityMetric,
+  TenantComplaint,
+  TroubleshootingSession
 } from '../types';
 import { 
   INITIAL_LEASES, 
@@ -16,7 +18,9 @@ import {
   INITIAL_MAINTENANCE, 
   INITIAL_BILLS, 
   INITIAL_RENT_PAYMENTS,
-  INITIAL_METRICS 
+  INITIAL_METRICS,
+  INITIAL_COMPLAINTS,
+  INITIAL_TROUBLESHOOTING
 } from './mockData';
 import { db, auth, OperationType, handleFirestoreError } from '../firebase/config';
 import { 
@@ -36,6 +40,8 @@ export interface AppState {
   bills: BillItem[];
   rentPayments: RentPayment[];
   metrics: ProductivityMetric[];
+  complaints: TenantComplaint[];
+  troubleshooting: TroubleshootingSession[];
   activeNotification: string | null;
 }
 
@@ -53,7 +59,12 @@ export class DataStore {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        return {
+          ...parsed,
+          complaints: parsed.complaints || INITIAL_COMPLAINTS,
+          troubleshooting: parsed.troubleshooting || INITIAL_TROUBLESHOOTING,
+        };
       }
     } catch (e) {
       console.warn('Could not read from localStorage, using seed data');
@@ -75,6 +86,8 @@ export class DataStore {
       bills: INITIAL_BILLS,
       rentPayments: INITIAL_RENT_PAYMENTS,
       metrics: INITIAL_METRICS,
+      complaints: INITIAL_COMPLAINTS,
+      troubleshooting: INITIAL_TROUBLESHOOTING,
       activeNotification: null,
     };
   }
@@ -386,6 +399,114 @@ export class DataStore {
       }
       return l;
     });
+    this.saveState();
+  }
+
+  // Tenant Complaint Management
+  public addComplaint(complaint: Omit<TenantComplaint, 'id' | 'createdAt' | 'updatedAt' | 'responses'>) {
+    const newComplaint: TenantComplaint = {
+      ...complaint,
+      id: `complaint-${Date.now().toString().slice(-4)}`,
+      status: 'submitted',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      responses: []
+    };
+
+    this.state.complaints = [newComplaint, ...this.state.complaints];
+
+    // Connect to Workflow Approvals if high or urgent priority
+    if (newComplaint.priority === 'urgent' || newComplaint.priority === 'high') {
+      const autoAppr = this.addApproval({
+        title: `Tenant Grievance: ${newComplaint.subject} (Unit ${newComplaint.unitNumber})`,
+        type: 'legal_addendum',
+        department: 'legal',
+        amount: 0,
+        requestedBy: newComplaint.tenantId,
+        requestedByName: newComplaint.isConfidential ? 'Confidential Tenant' : `${newComplaint.tenantName} (${newComplaint.unitNumber})`,
+        targetEntityId: newComplaint.id,
+        currentStage: 'Compliance Review',
+        requiredRoles: ['property_manager', 'legal_admin'],
+        status: 'pending',
+        priority: newComplaint.priority,
+        description: `Renter filed priority grievance in ${newComplaint.category}. Issue: ${newComplaint.description}. Troubleshooting summary: ${newComplaint.troubleshootingSummary || 'N/A'}`
+      });
+      newComplaint.approvalId = autoAppr.id;
+    }
+
+    this.showNotification(`Complaint filed for Unit ${newComplaint.unitNumber}. Management notified.`);
+    this.saveState();
+    this.syncDocToFirestore('complaints', newComplaint.id, newComplaint);
+    return newComplaint;
+  }
+
+  public updateComplaintStatus(id: string, status: TenantComplaint['status'], resolutionNotes?: string) {
+    this.state.complaints = this.state.complaints.map(c => {
+      if (c.id === id) {
+        return {
+          ...c,
+          status,
+          resolutionNotes: resolutionNotes || c.resolutionNotes,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return c;
+    });
+
+    this.showNotification(`Complaint ${id.toUpperCase()} updated: ${status.replace('_', ' ').toUpperCase()}`);
+    this.saveState();
+  }
+
+  public addComplaintResponse(complaintId: string, message: string, authorName: string, authorRole: string) {
+    const responseItem = {
+      id: `cr-${Date.now()}`,
+      authorName,
+      authorRole,
+      message,
+      createdAt: new Date().toISOString()
+    };
+
+    this.state.complaints = this.state.complaints.map(c => {
+      if (c.id === complaintId) {
+        return {
+          ...c,
+          responses: [...(c.responses || []), responseItem],
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return c;
+    });
+
+    this.showNotification(`Reply posted to complaint ${complaintId.toUpperCase()}`);
+    this.saveState();
+    return responseItem;
+  }
+
+  // Troubleshooting Sessions
+  public saveTroubleshootingSession(session: Omit<TroubleshootingSession, 'id' | 'createdAt'>) {
+    const newSession: TroubleshootingSession = {
+      ...session,
+      id: `ts-${Date.now().toString().slice(-4)}`,
+      createdAt: new Date().toISOString()
+    };
+
+    this.state.troubleshooting = [newSession, ...this.state.troubleshooting];
+    this.saveState();
+    return newSession;
+  }
+
+  public resolveTroubleshootingSession(sessionId: string) {
+    this.state.troubleshooting = this.state.troubleshooting.map(s => {
+      if (s.id === sessionId) {
+        return {
+          ...s,
+          status: 'resolved_by_renter',
+          resolvedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+    this.showNotification('🎉 Issue resolved by self-troubleshooting! Vendor dispatch avoided.');
     this.saveState();
   }
 

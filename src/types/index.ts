@@ -195,3 +195,82 @@ export interface ProductivityMetric {
   tasksProcessed: number;
   activeBottlenecks: number;
 }
+
+export type ComplaintCategory = 
+  | 'noise_disturbance'
+  | 'cleanliness_trash'
+  | 'parking_access'
+  | 'pest_environmental'
+  | 'security_lighting'
+  | 'building_amenities'
+  | 'other';
+
+export type ComplaintStatus = 
+  | 'submitted'
+  | 'under_investigation'
+  | 'action_taken'
+  | 'resolved';
+
+export interface ComplaintResponse {
+  id: string;
+  authorName: string;
+  authorRole: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface TenantComplaint {
+  id: string;
+  unitNumber: string;
+  tenantId: string;
+  tenantName: string;
+  tenantEmail: string;
+  category: ComplaintCategory;
+  subject: string;
+  description: string;
+  status: ComplaintStatus;
+  isConfidential: boolean;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  photoUrls?: string[];
+  troubleshootingAttempted?: boolean;
+  troubleshootingSummary?: string;
+  resolutionNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+  approvalId?: string;
+  responses?: ComplaintResponse[];
+}
+
+export interface TroubleshootingStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  instruction: string;
+  spokenInstruction: string;
+  caution?: string;
+  completed?: boolean;
+}
+
+export interface TroubleshootingResult {
+  safetyWarning?: string;
+  probableCause: string;
+  canRenterFix: boolean;
+  urgency: MaintenancePriority;
+  recommendedTrade: MaintenanceCategory;
+  steps: TroubleshootingStep[];
+  estimatedFixTime?: string;
+  recommendedTools?: string[];
+  filingRecommendation?: string;
+}
+
+export interface TroubleshootingSession {
+  id: string;
+  tenantId: string;
+  unitNumber: string;
+  issueDescription: string;
+  photoUrls: string[];
+  result?: TroubleshootingResult;
+  status: 'in_progress' | 'resolved_by_renter' | 'escalated_to_maintenance' | 'escalated_to_complaint';
+  createdAt: string;
+  resolvedAt?: string;
+}

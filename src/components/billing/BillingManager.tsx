@@ -20,7 +20,12 @@ import {
   Plus,
   Send,
   Download,
-  AlertCircle
+  AlertCircle,
+  FolderOpen,
+  Image as ImageIcon,
+  X,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import { analyzeBillPhoto, BillExtractionResult } from '../../services/geminiClient';
 import { uploadBillToDrive, exportRentRollToSheets } from '../../services/workspace';
@@ -46,11 +51,13 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'bills' | 'rent_roll'>('bills');
   const [isScanning, setIsScanning] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<Array<{ id: string; url: string; name: string }>>([]);
   const [extractedData, setExtractedData] = useState<BillExtractionResult | null>(null);
+  const [parsingError, setParsingError] = useState<{ reason: string; suggestions?: string[] } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sheetExportStatus, setSheetExportStatus] = useState<string | null>(null);
   const [driveUploadStatus, setDriveUploadStatus] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Manual bill form overrides
   const [vendorName, setVendorName] = useState('');
@@ -60,36 +67,105 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
   const [billType, setBillType] = useState<BillType>('contractor_invoice');
   const [notes, setNotes] = useState('');
 
-  // Handle Photo of Bill Camera / File selection
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Handle Photo of Bill from Library, Files, or Camera (supports up to 6 images)
+  const handleFilesSelected = async (fileList?: FileList | File[] | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const filesArray = Array.from(fileList);
+    const availableSlots = 6 - photos.length;
+    if (availableSlots <= 0) {
+      alert('Maximum of 6 images allowed per bill.');
+      return;
+    }
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const b64 = reader.result as string;
-      setPhotoPreview(b64);
-      processBillImage(b64);
-    };
-    reader.readAsDataURL(file);
+    const filesToProcess = filesArray.slice(0, availableSlots);
+    setParsingError(null);
+
+    const newPhotosPromises = filesToProcess.map(file => {
+      return new Promise<{ id: string; url: string; name: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            id: `p-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            url: reader.result as string,
+            name: file.name
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    const newPhotos = await Promise.all(newPhotosPromises);
+    const updatedPhotos = [...photos, ...newPhotos].slice(0, 6);
+    setPhotos(updatedPhotos);
+
+    // Run OCR analysis on all photos
+    runOcrOnPhotos(updatedPhotos);
   };
 
-  const processBillImage = async (b64: string) => {
+  const removePhoto = (id: string) => {
+    const remaining = photos.filter(p => p.id !== id);
+    setPhotos(remaining);
+    if (remaining.length > 0) {
+      runOcrOnPhotos(remaining);
+    } else {
+      setExtractedData(null);
+      setParsingError(null);
+    }
+  };
+
+  const runOcrOnPhotos = async (photoList: Array<{ id: string; url: string; name: string }>) => {
+    if (photoList.length === 0) return;
     try {
       setIsScanning(true);
-      const res = await analyzeBillPhoto(b64);
+      setParsingError(null);
+      
+      const payload = photoList.map(p => ({
+        data: p.url,
+        mimeType: p.url.startsWith('data:application/pdf') ? 'application/pdf' : 'image/jpeg',
+      }));
+
+      const res = await analyzeBillPhoto(payload);
       setExtractedData(res);
 
-      // Pre-fill editable fields
-      if (res.vendorName) setVendorName(res.vendorName);
-      if (res.invoiceNumber) setInvoiceNumber(res.invoiceNumber);
-      if (res.amount) setAmount(res.amount);
-      if (res.dueDate) setDueDate(res.dueDate);
-      if (res.billType) setBillType(res.billType as BillType);
-      if (res.notes) setNotes(res.notes);
+      if (res.parsingStatus === 'failed') {
+        setParsingError({
+          reason: res.failureReason || 'Failed to detect invoice numbers, total amount, or vendor name in the uploaded photo(s).',
+          suggestions: res.suggestions || [
+            'Ensure the invoice or receipt is well-lit and not blurry',
+            'Make sure the total amount and invoice header are visible',
+            'You can still type the fields manually below'
+          ]
+        });
+      } else {
+        if (res.vendorName) setVendorName(res.vendorName);
+        if (res.invoiceNumber) setInvoiceNumber(res.invoiceNumber);
+        if (res.amount) setAmount(res.amount);
+        if (res.dueDate) setDueDate(res.dueDate);
+        if (res.billType) setBillType(res.billType as BillType);
+        if (res.notes) setNotes(res.notes);
+      }
     } catch (err: any) {
       console.error('Bill OCR analysis error:', err);
-      alert('Could not parse image details automatically. Please enter bill details manually.');
+      let errorMsg = 'Unable to parse image(s). Please verify the document is well-lit and legible.';
+      const raw = err?.message || '';
+      if (raw.includes('429') || raw.includes('quota') || raw.includes('RESOURCE_EXHAUSTED')) {
+        errorMsg = 'Gemini API free tier rate limit reached. Please wait a brief moment before retrying, or complete the fields manually below.';
+      } else if (raw.includes('503') || raw.includes('UNAVAILABLE') || raw.includes('high demand')) {
+        errorMsg = 'The AI OCR service is experiencing temporary high traffic. Please retry in a few seconds or enter details manually below.';
+      } else if (raw.includes('format') || raw.includes('image')) {
+        errorMsg = 'The image format could not be decoded. Please upload a clear JPG, PNG, or PDF.';
+      } else if (raw) {
+        errorMsg = raw;
+      }
+
+      setParsingError({
+        reason: errorMsg,
+        suggestions: [
+          'Verify file format is JPG, PNG, WEBP, or PDF',
+          'Ensure total file size is under 20MB',
+          'Enter details manually in the form fields below'
+        ]
+      });
     } finally {
       setIsScanning(false);
     }
@@ -106,7 +182,7 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
       amount: Number(amount),
       dueDate,
       status: 'unpaid',
-      photoUrl: photoPreview || undefined,
+      photoUrl: photos[0]?.url || undefined,
       ocrConfidence: extractedData?.confidenceScore || 0.95,
       extractedLineItems: extractedData?.lineItems,
       submittedBy: userName,
@@ -115,8 +191,9 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
 
     // Reset form
     setShowUploadModal(false);
-    setPhotoPreview(null);
+    setPhotos([]);
     setExtractedData(null);
+    setParsingError(null);
     setVendorName('');
     setInvoiceNumber('');
     setAmount(0);
@@ -252,8 +329,8 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
             onClick={() => setShowUploadModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition"
           >
-            <Camera className="w-4 h-4" />
-            <span>Take Photo / Upload Bill</span>
+            <FolderOpen className="w-4 h-4" />
+            <span>Upload Bill / Choose Photo</span>
           </button>
         ) : (
           <button
@@ -457,42 +534,167 @@ export const BillingManager: React.FC<BillingManagerProps> = ({
             </div>
 
             <div className="space-y-4">
-              {/* Camera Input Zone */}
-              <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-6 text-center bg-slate-900/50 transition">
-                <Camera className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-                <div className="text-xs font-semibold text-white mb-1">
-                  Snap a photo of the bill or invoice
+              {/* Photo & File Selection Zone */}
+              <div 
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files) handleFilesSelected(e.dataTransfer.files);
+                }}
+                className={`border-2 border-dashed rounded-2xl p-5 text-center transition ${
+                  isDragging ? 'border-indigo-400 bg-indigo-950/40' : 'border-slate-700 hover:border-indigo-500 bg-slate-900/50'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-600/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-400 mb-3">
-                  Gemini 3.1 Pro extracts vendor, invoice number, amount, due date and line items.
+
+                <div className="text-xs font-semibold text-white mb-1">
+                  Upload Bill from Photo Library, Files, or Camera (Up to 6 Images)
+                </div>
+                <p className="text-[11px] text-slate-400 mb-3.5 max-w-sm mx-auto">
+                  Select multi-page invoices, receipts, and line-item schedules. Choose files from your photo library or snap new photos with your camera.
                 </p>
-                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow">
-                  <Upload className="w-4 h-4" />
-                  <span>Choose Photo / Open Camera</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handlePhotoCapture}
-                    className="hidden"
-                  />
-                </label>
+
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  {/* Option 1: Choose from Photo Library or Files (Allows Multiple) */}
+                  <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow">
+                    <FolderOpen className="w-4 h-4" />
+                    <span>Choose from Photo Library / Files</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,application/pdf"
+                      onChange={(e) => handleFilesSelected(e.target.files)}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {/* Option 2: Live Camera Snapshot */}
+                  <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 rounded-xl text-xs font-semibold transition">
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    <span>Take Photo with Camera</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => handleFilesSelected(e.target.files)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-2.5 flex items-center justify-center gap-2">
+                  <span>Supports JPG, PNG, WEBP, PDF, HEIC</span>
+                  <span>•</span>
+                  <span className="font-semibold text-slate-400">{photos.length} / 6 images loaded</span>
+                </div>
               </div>
 
               {isScanning && (
-                <div className="p-4 bg-indigo-950/40 border border-indigo-500/40 rounded-xl text-center text-xs text-indigo-200 flex items-center justify-center gap-2">
+                <div className="p-4 bg-indigo-950/40 border border-indigo-500/40 rounded-xl text-center text-xs text-indigo-200 flex items-center justify-center gap-2 animate-fadeIn">
                   <Sparkles className="w-4 h-4 animate-spin text-indigo-400" />
-                  <span>Gemini 3.1 Pro is reading and parsing invoice details...</span>
+                  <span>Gemini 3.1 Pro OCR is analyzing {photos.length} page(s) and extracting invoice items...</span>
                 </div>
               )}
 
-              {photoPreview && (
-                <div className="flex items-center gap-4 p-3 bg-slate-900 rounded-xl border border-slate-700">
-                  <img src={photoPreview} alt="Bill preview" className="w-20 h-20 object-cover rounded-lg border border-slate-700" />
-                  <div className="text-xs space-y-1">
-                    <span className="font-bold text-white block">Scanned Photo Loaded</span>
-                    <span className="text-slate-400">Review or adjust the parsed fields below before storing.</span>
+              {/* Parsing Failure Diagnostic Box */}
+              {parsingError && (
+                <div className="p-4 bg-rose-950/40 border border-rose-500/50 rounded-2xl text-xs space-y-2 animate-fadeIn">
+                  <div className="flex items-center justify-between text-rose-300 font-bold">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>OCR Parsing Failed / Incomplete</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => runOcrOnPhotos(photos)}
+                      className="text-[11px] text-indigo-300 hover:text-white underline font-semibold flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Retry OCR</span>
+                    </button>
                   </div>
+
+                  <div className="text-slate-200">
+                    <span className="font-semibold text-rose-200">Reason for Failure:</span> {parsingError.reason}
+                  </div>
+
+                  {parsingError.suggestions && parsingError.suggestions.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-[11px] font-semibold text-rose-300 block mb-1">Diagnostic Tips:</span>
+                      <ul className="list-disc pl-4 space-y-0.5 text-slate-300 text-[11px]">
+                        {parsingError.suggestions.map((s, idx) => (
+                          <li key={idx}>{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="text-[11px] text-slate-400 pt-1 border-t border-rose-900/60">
+                    You can still edit or complete the bill details in the form fields below to store the bill.
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Photo Thumbnails Gallery (Up to 6 images) */}
+              {photos.length > 0 && (
+                <div className="space-y-2 bg-slate-900/70 p-3 rounded-2xl border border-slate-700">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-white">
+                      Uploaded Bill Pages & Receipts ({photos.length} / 6)
+                    </span>
+                    {photos.length < 6 && (
+                      <label className="cursor-pointer text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
+                        <Plus className="w-3 h-3" />
+                        <span>Add Page ({6 - photos.length} slots left)</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,application/pdf"
+                          onChange={(e) => handleFilesSelected(e.target.files)}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {photos.map((p, idx) => (
+                      <div key={p.id} className="relative group rounded-xl overflow-hidden border border-slate-700 aspect-square bg-slate-950">
+                        <img src={p.url} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                        <span className="absolute top-1 left-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.2 rounded">
+                          Page {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(p.id)}
+                          className="absolute top-1 right-1 bg-rose-600/90 hover:bg-rose-600 text-white rounded-full p-1 opacity-90 transition shadow"
+                          title="Remove photo"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {extractedData && !parsingError && (
+                    <div className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 pt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        Parsed successfully from {photos.length} image(s) with {Math.round((extractedData.confidenceScore || 0.95) * 100)}% OCR confidence.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

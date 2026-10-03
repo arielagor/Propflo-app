@@ -7,8 +7,9 @@ import {
   chatAssistant,
   generatePropertyImage,
   searchPropertyRegulations,
-  findNearbyVendorsOrProperties
-} from './geminiService';
+  findNearbyVendorsOrProperties,
+  troubleshootMaintenanceIssue
+} from './geminiService.ts';
 
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -52,23 +53,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     const body = await parseJsonBody(req);
 
     if (url === '/api/gemini/analyze-bill') {
-      const { imageBase64, mimeType } = body;
-      if (!imageBase64) {
-        sendJson(res, 400, { error: 'Missing imageBase64' });
+      const { imageBase64, images, mimeType } = body;
+      const input = images && Array.isArray(images) ? images : imageBase64;
+      if (!input || (Array.isArray(input) && input.length === 0)) {
+        sendJson(res, 400, { error: 'Missing imageBase64 or images array' });
         return true;
       }
-      const result = await analyzeBillImage(imageBase64, mimeType);
+      const result = await analyzeBillImage(input, mimeType);
       sendJson(res, 200, result);
       return true;
     }
 
     if (url === '/api/gemini/analyze-maintenance') {
-      const { imageBase64, prompt, mimeType } = body;
-      if (!imageBase64) {
-        sendJson(res, 400, { error: 'Missing imageBase64' });
+      const { imageBase64, images, prompt, mimeType } = body;
+      const input = images && Array.isArray(images) ? images : imageBase64;
+      if (!input || (Array.isArray(input) && input.length === 0)) {
+        sendJson(res, 400, { error: 'Missing imageBase64 or images array' });
         return true;
       }
-      const result = await analyzeMaintenanceDamage(imageBase64, prompt, mimeType);
+      const result = await analyzeMaintenanceDamage(input, prompt, mimeType);
       sendJson(res, 200, result);
       return true;
     }
@@ -131,6 +134,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
       const result = await findNearbyVendorsOrProperties(query);
+      sendJson(res, 200, result);
+      return true;
+    }
+
+    if (url === '/api/gemini/troubleshoot-maintenance') {
+      const { imageBase64, images, description, tradeHint, mimeType } = body;
+      const input = images && Array.isArray(images) ? images : imageBase64;
+      const result = await troubleshootMaintenanceIssue(input || [], description || '', tradeHint, mimeType);
       sendJson(res, 200, result);
       return true;
     }

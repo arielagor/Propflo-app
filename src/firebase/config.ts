@@ -13,7 +13,18 @@ import {
   User,
   Auth
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import rawConfig from '../../firebase-applet-config.json';
+
+// Support secure environment variable overrides without committing secrets
+const firebaseConfig = {
+  ...rawConfig,
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || rawConfig.apiKey,
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || rawConfig.projectId,
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || rawConfig.appId,
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || rawConfig.authDomain,
+  firestoreDatabaseId: (import.meta.env.VITE_FIREBASE_DATABASE_ID as string) || (rawConfig as any).firestoreDatabaseId,
+  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || rawConfig.storageBucket,
+};
 
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();

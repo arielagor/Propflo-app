@@ -8,6 +8,9 @@ export interface BillExtractionResult {
   taxAmount?: number;
   notes?: string;
   confidenceScore?: number;
+  parsingStatus?: 'success' | 'partial' | 'failed';
+  failureReason?: string;
+  suggestions?: string[];
 }
 
 export interface DamageAnalysisResult {
@@ -18,30 +21,43 @@ export interface DamageAnalysisResult {
   estimatedCostRange?: string;
   suggestedPrecaution: string;
   triageSummary: string;
+  parsingStatus?: 'success' | 'partial' | 'failed';
+  failureReason?: string;
 }
 
-export async function analyzeBillPhoto(imageBase64: string, mimeType: string = "image/jpeg"): Promise<BillExtractionResult> {
+export async function analyzeBillPhoto(
+  input: string | Array<{ data: string; mimeType?: string }>,
+  mimeType: string = "image/jpeg"
+): Promise<BillExtractionResult> {
+  const payload = Array.isArray(input)
+    ? { images: input.slice(0, 6) }
+    : { imageBase64: input, mimeType };
+
   const res = await fetch('/api/gemini/analyze-bill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64, mimeType }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to analyze bill image');
+    throw new Error(err.error || 'Failed to analyze bill images');
   }
   return res.json();
 }
 
 export async function analyzeMaintenancePhoto(
-  imageBase64: string, 
+  input: string | Array<{ data: string; mimeType?: string }>, 
   prompt: string = '', 
   mimeType: string = "image/jpeg"
 ): Promise<DamageAnalysisResult> {
+  const payload = Array.isArray(input)
+    ? { images: input.slice(0, 6), prompt }
+    : { imageBase64: input, prompt, mimeType };
+
   const res = await fetch('/api/gemini/analyze-maintenance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64, prompt, mimeType }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -127,6 +143,47 @@ export async function findNearbyServices(query: string): Promise<{ answer: strin
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Maps grounding failed');
+  }
+  return res.json();
+}
+
+export interface TroubleshootingApiResponse {
+  safetyWarning?: string;
+  probableCause: string;
+  canRenterFix: boolean;
+  urgency: 'emergency' | 'high' | 'medium' | 'low';
+  recommendedTrade: string;
+  steps: Array<{
+    id: string;
+    stepNumber: number;
+    title: string;
+    instruction: string;
+    spokenInstruction: string;
+    caution?: string;
+  }>;
+  estimatedFixTime?: string;
+  recommendedTools?: string[];
+  filingRecommendation?: string;
+}
+
+export async function requestMaintenanceTroubleshooting(
+  input: string | Array<{ data: string; mimeType?: string }>,
+  description: string,
+  tradeHint?: string,
+  mimeType: string = "image/jpeg"
+): Promise<TroubleshootingApiResponse> {
+  const payload = Array.isArray(input)
+    ? { images: input.slice(0, 6), description, tradeHint }
+    : { imageBase64: input, description, tradeHint, mimeType };
+
+  const res = await fetch('/api/gemini/troubleshoot-maintenance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Troubleshooting request failed');
   }
   return res.json();
 }

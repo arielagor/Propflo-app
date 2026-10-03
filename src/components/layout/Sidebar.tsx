@@ -7,12 +7,15 @@ import {
   BarChart3, 
   Sparkles, 
   FolderSync,
-  AlertCircle
+  AlertCircle,
+  Home,
+  MessageSquareWarning
 } from 'lucide-react';
 import { UserRole } from '../../types';
 
 export type NavTab = 
   | 'dashboard' 
+  | 'renter_portal'
   | 'maintenance' 
   | 'billing' 
   | 'leases' 
@@ -29,6 +32,7 @@ interface SidebarProps {
     activeMaintenance: number;
     unpaidBills: number;
     pendingLeases: number;
+    activeComplaints?: number;
   };
 }
 
@@ -40,6 +44,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const tabs = [
     {
+      id: 'renter_portal' as NavTab,
+      label: 'Renter Portal & Voice Fix',
+      subtitle: 'Complaints, Pay & Voice DIY',
+      icon: Home,
+      highlight: userRole === 'lessee',
+      badge: counts.activeComplaints && counts.activeComplaints > 0 ? counts.activeComplaints : undefined,
+      badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+    },
+    {
       id: 'dashboard' as NavTab,
       label: 'Workflow Approvals',
       subtitle: 'Bottlenecks & Feedback',
@@ -49,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'maintenance' as NavTab,
-      label: 'Maintenance & Voice',
+      label: 'Maintenance & Dispatch',
       subtitle: userRole === 'lessee' ? 'Tenant Voice Hotline' : 'Voice Dispatch & Triage',
       icon: Wrench,
       badge: counts.activeMaintenance > 0 ? counts.activeMaintenance : undefined,

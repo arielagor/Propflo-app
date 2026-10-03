@@ -15,6 +15,7 @@ import { AnalyticsDashboard } from './components/analytics/AnalyticsDashboard';
 import { PropFlowAIChat } from './components/ai/PropFlowAIChat';
 import { VoiceIntakeModal } from './components/maintenance/VoiceIntakeModal';
 import { WorkspaceSyncModal } from './components/workspace/WorkspaceSyncModal';
+import { RenterPortal } from './components/portal/RenterPortal';
 import { UserRole } from './types';
 
 export default function App() {
@@ -33,7 +34,7 @@ export default function App() {
   const handleRoleChange = (role: UserRole) => {
     store.setRole(role);
     if (role === 'lessee') {
-      setActiveTab('maintenance');
+      setActiveTab('renter_portal');
     }
   };
 
@@ -42,6 +43,7 @@ export default function App() {
     activeMaintenance: state.maintenance.filter(m => m.status !== 'completed').length,
     unpaidBills: state.bills.filter(b => b.status === 'unpaid' || b.status === 'approved_for_payment').length,
     pendingLeases: state.leases.filter(l => l.status === 'pending_signature').length,
+    activeComplaints: (state.complaints || []).filter(c => c.status !== 'resolved').length,
   };
 
   return (
@@ -66,6 +68,29 @@ export default function App() {
 
         {/* Main Content Workspace Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {activeTab === 'renter_portal' && (
+            <RenterPortal
+              tenantName={state.currentUser.role === 'lessee' ? state.currentUser.displayName : 'Elena Rostova'}
+              tenantEmail={state.currentUser.role === 'lessee' ? state.currentUser.email : 'elena.rostova@example.com'}
+              unitNumber={state.currentUser.role === 'lessee' ? (state.currentUser.unit || 'Unit 4B') : 'Unit 4B'}
+              propertyName="Highland Park Residences"
+              lease={state.leases.find(l => l.unitNumber === '4B')}
+              rentPayments={state.rentPayments}
+              maintenance={state.maintenance}
+              complaints={state.complaints}
+              onAddMaintenanceRequest={req => store.addMaintenanceRequest(req)}
+              onAddComplaint={comp => store.addComplaint(comp)}
+              onAddComplaintResponse={(compId, msg, author, role) => store.addComplaintResponse(compId, msg, author, role)}
+              onPayRent={(paymentId, method) => store.recordRentPayment(paymentId, method)}
+              onAddBill={bill => store.addBill(bill)}
+              onOpenVoiceHotline={() => setIsVoiceModalOpen(true)}
+              onSwitchToManagerView={() => {
+                store.setRole('property_manager');
+                setActiveTab('dashboard');
+              }}
+            />
+          )}
+
           {activeTab === 'dashboard' && (
             <WorkflowDashboard
               approvals={state.approvals}

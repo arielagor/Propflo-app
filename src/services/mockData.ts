@@ -5,7 +5,9 @@ import {
   BillItem, 
   RentPayment, 
   LeaseAgreement, 
-  ProductivityMetric 
+  ProductivityMetric,
+  TenantComplaint,
+  TroubleshootingSession
 } from '../types';
 
 export const INITIAL_LEASES: LeaseAgreement[] = [
@@ -442,5 +444,117 @@ export const INITIAL_METRICS: ProductivityMetric[] = [
     slaComplianceRate: 91.5,
     tasksProcessed: 14,
     activeBottlenecks: 1,
+  }
+];
+
+export const INITIAL_COMPLAINTS: TenantComplaint[] = [
+  {
+    id: 'complaint-101',
+    unitNumber: '4B',
+    tenantId: 'user-tenant-1',
+    tenantName: 'Elena Rostova',
+    tenantEmail: 'elena.rostova@example.com',
+    category: 'noise_disturbance',
+    subject: 'Excessive Bass & Heavy Stomping from Unit 5B after 11 PM',
+    description: 'Repeated loud sub-bass vibrations and furniture dragging occurring between 11:30 PM and 2:00 AM on weekdays. This is violating section 4 quiet hours.',
+    status: 'under_investigation',
+    isConfidential: false,
+    priority: 'medium',
+    createdAt: '2026-10-01T22:30:00Z',
+    updatedAt: '2026-10-02T09:15:00Z',
+    responses: [
+      {
+        id: 'cr-1',
+        authorName: 'Ariel Agor',
+        authorRole: 'Property Manager',
+        message: 'Notice of Quiet Hours covenant has been issued to Unit 5B resident. Courtesy patrol will log noise levels tonight.',
+        createdAt: '2026-10-02T09:15:00Z'
+      }
+    ]
+  },
+  {
+    id: 'complaint-102',
+    unitNumber: '2A',
+    tenantId: 'user-tenant-2',
+    tenantName: 'Marcus Vance',
+    tenantEmail: 'marcus.v@example.com',
+    category: 'parking_access',
+    subject: 'Unauthorized Vehicle Blocking Assigned Space #14',
+    description: 'A silver sedan with out-of-state plates has been parked in my reserved subterranean spot for over 36 hours.',
+    status: 'action_taken',
+    isConfidential: false,
+    priority: 'high',
+    createdAt: '2026-09-30T18:45:00Z',
+    updatedAt: '2026-10-01T08:00:00Z',
+    responses: [
+      {
+        id: 'cr-2',
+        authorName: 'Devon Miller',
+        authorRole: 'Vendor Coordinator',
+        message: 'Towing dispatch warned the vehicle owner. Vehicle removed at 8:15 AM today.',
+        createdAt: '2026-10-01T08:00:00Z'
+      }
+    ]
+  },
+  {
+    id: 'complaint-103',
+    unitNumber: '4B',
+    tenantId: 'user-tenant-1',
+    tenantName: 'Elena Rostova',
+    tenantEmail: 'elena.rostova@example.com',
+    category: 'cleanliness_trash',
+    subject: 'Recycling Chute Jammed on 4th Floor',
+    description: 'Cardboard boxes are blocking the recycling access door on 4th floor corridor, causing debris overflow.',
+    status: 'submitted',
+    isConfidential: false,
+    priority: 'low',
+    createdAt: '2026-10-02T16:20:00Z',
+    updatedAt: '2026-10-02T16:20:00Z',
+    responses: []
+  }
+];
+
+export const INITIAL_TROUBLESHOOTING: TroubleshootingSession[] = [
+  {
+    id: 'ts-201',
+    tenantId: 'user-tenant-1',
+    unitNumber: '4B',
+    issueDescription: 'Kitchen garbage disposal humming but blades not spinning',
+    photoUrls: [],
+    status: 'resolved_by_renter',
+    createdAt: '2026-09-28T14:10:00Z',
+    resolvedAt: '2026-09-28T14:18:00Z',
+    result: {
+      probableCause: 'Food waste jammed the disposal flywheel causing internal thermal circuit reset',
+      canRenterFix: true,
+      urgency: 'low',
+      recommendedTrade: 'appliance',
+      steps: [
+        {
+          id: 'step-1',
+          stepNumber: 1,
+          title: 'Power Safety Check',
+          instruction: 'Turn off the wall switch and unplug unit under sink before touching anything.',
+          spokenInstruction: 'Make sure the disposal wall switch is turned completely off before doing anything else.',
+          completed: true
+        },
+        {
+          id: 'step-2',
+          stepNumber: 2,
+          title: 'Manual Hex Wrench Rotation',
+          instruction: 'Insert 1/4 inch Allen key into socket at bottom center of disposal and crank back and forth.',
+          spokenInstruction: 'Insert the hex key into the hole underneath the disposal and twist back and forth to free the jam.',
+          completed: true
+        },
+        {
+          id: 'step-3',
+          stepNumber: 3,
+          title: 'Press Red Reset Button',
+          instruction: 'Press the red reset button on the bottom of the disposal housing until it clicks.',
+          spokenInstruction: 'Now press the little red reset button on the bottom of the disposal until you feel it click.',
+          completed: true
+        }
+      ]
+    }
   }
 ];
