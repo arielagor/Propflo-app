@@ -1,0 +1,6 @@
+{
+  "name": "PropFlow Enterprise",
+  "description": "Cross-platform real estate bureaucracy, lease document management, automated approvals, maintenance voice transcription, bill photo scanning, and Google Workspace integration.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

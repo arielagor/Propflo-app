@@ -1,0 +1,185 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control for bureaucracy management",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["property_manager", "lessee", "finance_officer", "vendor_coordinator", "executive", "legal_admin"] },
+        "phone": { "type": "string" },
+        "unit": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "role"]
+    },
+    "Lease": {
+      "title": "Lease",
+      "description": "Lease agreement document with e-signature and versioning",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "propertyName": { "type": "string" },
+        "unitNumber": { "type": "string" },
+        "tenantName": { "type": "string" },
+        "tenantEmail": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "monthlyRent": { "type": "number" },
+        "securityDeposit": { "type": "number" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "pending_signature", "active", "expired", "terminated"] },
+        "signatureData": { "type": "string" },
+        "signedAt": { "type": "string" },
+        "termsAccepted": { "type": "boolean" },
+        "documentDriveId": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "propertyName", "unitNumber", "monthlyRent", "status"]
+    },
+    "MaintenanceRequest": {
+      "title": "MaintenanceRequest",
+      "description": "On-site tenant maintenance request with voice transcript and vendor routing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "propertyName": { "type": "string" },
+        "unitNumber": { "type": "string" },
+        "lesseeId": { "type": "string" },
+        "lesseeName": { "type": "string" },
+        "lesseeEmail": { "type": "string" },
+        "category": { "type": "string", "enum": ["plumbing", "electrical", "hvac", "structural", "appliance", "general"] },
+        "priority": { "type": "string", "enum": ["emergency", "high", "medium", "low"] },
+        "status": { "type": "string", "enum": ["submitted", "under_review", "vendor_dispatched", "work_in_progress", "completed", "cancelled"] },
+        "audioTranscript": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "photoUrls": { "type": "string" },
+        "assignedVendor": { "type": "string" },
+        "vendorContact": { "type": "string" },
+        "estimatedCost": { "type": "number" },
+        "actualCost": { "type": "number" },
+        "approvalId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "unitNumber", "category", "priority", "status"]
+    },
+    "WorkflowApproval": {
+      "title": "WorkflowApproval",
+      "description": "Inter-departmental approval workflow with real-time feedback",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["lease_agreement", "maintenance_expense", "vendor_contract", "rent_adjustment", "legal_addendum"] },
+        "department": { "type": "string", "enum": ["leasing", "maintenance", "finance", "legal", "executive"] },
+        "amount": { "type": "number" },
+        "requestedBy": { "type": "string" },
+        "requestedByName": { "type": "string" },
+        "targetEntityId": { "type": "string" },
+        "currentStage": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "changes_requested"] },
+        "bottleneckHours": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "department", "status"]
+    },
+    "Bill": {
+      "title": "Bill",
+      "description": "Vendor invoices, utility bills, and payment records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "billType": { "type": "string", "enum": ["utility", "contractor_invoice", "property_tax", "maintenance_receipt", "insurance"] },
+        "vendorName": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["unpaid", "approved_for_payment", "paid", "disputed"] },
+        "photoUrl": { "type": "string" },
+        "ocrConfidence": { "type": "number" },
+        "driveFileId": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "paidAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "billType", "vendorName", "amount", "status"]
+    },
+    "RentPayment": {
+      "title": "RentPayment",
+      "description": "Rent collection records and tenant payments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "leaseId": { "type": "string" },
+        "unitNumber": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "tenantName": { "type": "string" },
+        "amount": { "type": "number" },
+        "period": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["paid", "pending", "overdue"] },
+        "paidAt": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "referenceNumber": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "unitNumber", "amount", "status"]
+    },
+    "ApprovalFeedback": {
+      "title": "ApprovalFeedback",
+      "description": "Real-time comments and bottleneck feedback on pending approvals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorRole": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["comment", "revision_request", "waiver", "approval_reason"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "approvalId", "authorName", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile records with role assignments"
+    },
+    "/leases/{leaseId}": {
+      "schema": "Lease",
+      "description": "Property lease agreements and e-signature records"
+    },
+    "/maintenance/{requestId}": {
+      "schema": "MaintenanceRequest",
+      "description": "Maintenance tickets, voice transcriptions, and contractor routing"
+    },
+    "/approvals/{approvalId}": {
+      "schema": "WorkflowApproval",
+      "description": "Inter-departmental workflow tasks and approvals"
+    },
+    "/bills/{billId}": {
+      "schema": "Bill",
+      "description": "Scanned invoices, utility bills, and payment tracking"
+    },
+    "/rent_payments/{paymentId}": {
+      "schema": "RentPayment",
+      "description": "Automated rent collection ledger entries"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": "ApprovalFeedback",
+      "description": "Real-time communication and bottleneck resolution messages"
+    }
+  }
+}

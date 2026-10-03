@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isCurrentUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'ariel.agor@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isCurrentUser(userId) || isSuperAdmin())
+        && incoming().id is string
+        && incoming().email is string;
+      allow update: if isSignedIn() && (isCurrentUser(userId) || isSuperAdmin());
+      allow delete: if isSuperAdmin();
+    }
+
+    // LEASES COLLECTION
+    match /leases/{leaseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().propertyName is string
+        && incoming().unitNumber is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // MAINTENANCE REQUESTS COLLECTION
+    match /maintenance/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().title is string
+        && incoming().unitNumber is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // APPROVALS COLLECTION
+    match /approvals/{approvalId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().title is string
+        && incoming().type is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // BILLS & INVOICES COLLECTION
+    match /bills/{billId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().vendorName is string
+        && incoming().billType is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // RENT PAYMENTS COLLECTION
+    match /rent_payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().unitNumber is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // APPROVAL FEEDBACK & BOTTLENECK COMMENTS COLLECTION
+    match /feedback/{feedbackId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().approvalId is string
+        && incoming().message is string;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+  }
+}
